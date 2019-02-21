@@ -68,8 +68,11 @@ class BaseSampler(Sampler):
                 advantage = return_so_far - path_baselines[t]
                 advantages.append(advantage)
             discount_array = self.algo.discount ** np.arange(len(path["rewards"]))
-            advantages = advantages * discount_array
-            path["advantages"] = np.array(advantages[::-1])
+            # correction
+
+            advantages = np.array(advantages[::-1])
+            path["advantages"] = advantages * discount_array
+
             path["returns"] = special.discount_cumsum(path["rewards"],
                                                       self.algo.discount)
             baselines.append(path_baselines)
