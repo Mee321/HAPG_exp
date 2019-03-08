@@ -239,7 +239,7 @@ class CAPG(object):
 
                     x_paramater = self.flatten_parameters(self.mix_policy.get_param_values())
                     dim_theta = len(x_paramater)
-                    u = np.random.rand(dim_theta)
+                    u = np.random.randn(dim_theta)
                     y_parameter = self.flatten_parameters(self.mix_policy.get_param_values()) + u * v
                     self.mix_policy.set_param_values(y_parameter, trainable=True)
 
