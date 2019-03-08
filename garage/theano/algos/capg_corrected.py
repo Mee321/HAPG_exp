@@ -37,7 +37,7 @@ class CAPG(object):
                  whole_paths=True,
                  gae_lamda=1,
                  decay_learing_rate=False,
-                 center_adv=False,
+                 center_adv=True,
                  positive_adv=False,
                  log_dir=None,):
         self.env = env
@@ -127,6 +127,12 @@ class CAPG(object):
             path["returns"] = special.discount_cumsum(
                 path["rewards"], self.discount
             )
+
+            '''
+            returns = special.discount_cumsum(
+                path["rewards"], self.discount)
+            path['returns'] = returns * discount_array
+            '''
             if self.center_adv:
                 advantages = (advantages - np.mean(advantages)) / (
                     np.std(advantages) + 1e-8)
@@ -178,7 +184,7 @@ class CAPG(object):
             self.writer.add_scalar("Average_outerloop_return", avg_returns, j)
             self.outer_optimize(j, sample_data)
             for _ in range(self.n_sub_itr):
-                n_sub = 0
+                n_sub = 0 # num of subsamples
                 sub_paths_all = []
                 self.generate_mix_policy()
                 sub_paths = self.sample_paths(1, self.mix_policy)
@@ -263,9 +269,45 @@ class CAPG(object):
                 self.writer.add_scalar("AverageReturn", avg_returns, j)
                 self.writer.add_scalar("Gradient norm", self.grad_norm(g_d), j)
                 print("timesteps: " + str(j) + " average return: " + str(avg_returns))
-                
+                '''
+                if j > 5e5:
+                    # check the accuracy of estimator
+                    gradient_sample_real = self.sample_paths(100, self.policy)
+                    gradient_sample_1 = self.sample_paths(10, self.policy)
+                    gradient_sample_2 = self.sample_paths(1,self.policy)
 
+                    gradient_sample_real_observations = np.concatenate([p["observations"] for p in gradient_sample_real])
+                    gradient_sample_real_actions = np.concatenate([p["actions"] for p in gradient_sample_real])
+                    gradient_sample_real_advantages = np.concatenate([p["advantages"] for p in gradient_sample_real])
+                    gradient_real = self.f_train(gradient_sample_real_observations, gradient_sample_real_actions,
+                                              gradient_sample_real_advantages)
+                    gradient_real = [g/100 for g in gradient_real]
+
+                    gradient_sample_1_observations = np.concatenate([p["observations"] for p in gradient_sample_1])
+                    gradient_sample_1_actions = np.concatenate([p["actions"] for p in gradient_sample_1])
+                    gradient_sample_1_advantages = np.concatenate([p["advantages"] for p in gradient_sample_1])
+                    gradient_1 = self.f_train(gradient_sample_1_observations, gradient_sample_1_actions, gradient_sample_1_advantages)
+                    gradient_1 = [g/10 for g in gradient_1]
+
+                    gradient_sample_2_observations = np.concatenate([p["observations"] for p in gradient_sample_2])
+                    gradient_sample_2_actions = np.concatenate([p["actions"] for p in gradient_sample_2])
+                    gradient_sample_2_advantages = np.concatenate([p["advantages"] for p in gradient_sample_2])
+                    gradient_2 = self.f_train(gradient_sample_2_observations, gradient_sample_2_actions,
+                                              gradient_sample_2_advantages)
+
+                    diff = self.grad_norm([g1-g2 for g1,g2 in zip(gradient_real, gradient_1)])
+                    diff1 = self.grad_norm([g1-g2 for g1,g2 in zip(gradient_real, gradient_2)])
+                    diff2 = self.grad_norm([g1-g2 for g1,g2 in zip(gradient_real, g_d)])
+                    print("diff real with 10:", diff)
+                    print("diff real with 1:", diff1)
+                    print("diff real with g_d:", diff2)
+                    self.writer.add_scalar("diff_10", diff, j)
+                    self.writer.add_scalar("diff_1", diff1, j)
+                    self.writer.add_scalar("diff_gd", diff2, j
+)
+                '''
                 g_d = self.normalize_gradient(g_d)
+                
                 self.backup_policy.set_param_values(self.policy.get_param_values(trainable=True), trainable=True)
                 if self.decay_learning_rate:
                     cur_lr = self.learning_rate * (10 ** (-1 * j / self.n_timestep))
@@ -366,9 +408,22 @@ class CAPG(object):
         actions = ext.extract(samples_data, "actions")
         advantages = ext.extract(samples_data, "advantages")
         num_traj = len(samples_data["paths"])
-        print(num_traj)
+
         s_g = self.f_train(observations[0], actions[0], advantages[0])
         s_g = [x/num_traj for x in s_g]
+        '''
+        if itr > 5e5:
+            # check the accuracy of estimator
+            gradient_sample_real = self.sample_paths(100, self.policy)
+            gradient_sample_real_observations = np.concatenate([p["observations"] for p in gradient_sample_real])
+            gradient_sample_real_actions = np.concatenate([p["actions"] for p in gradient_sample_real])
+            gradient_sample_real_advantages = np.concatenate([p["advantages"] for p in gradient_sample_real])
+            gradient_real = self.f_train(gradient_sample_real_observations, gradient_sample_real_actions,
+                                         gradient_sample_real_advantages)
+            gradient_real = [g / 100 for g in gradient_real]
+            diff = self.grad_norm([g1 - g2 for g1, g2 in zip(gradient_real, s_g)])
+            print("out diff real with 10:", diff)
+        '''
         self.writer.add_scalar("Gradient norm", self.grad_norm(s_g), itr)
         self.writer.add_scalar("Outerloop_gradient_norm", self.grad_norm(s_g), itr)
         self.gradient_backup = copy.deepcopy(s_g)
