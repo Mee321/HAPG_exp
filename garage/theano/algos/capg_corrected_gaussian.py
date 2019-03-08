@@ -184,7 +184,7 @@ class CAPG(object):
             self.writer.add_scalar("Average_outerloop_return", avg_returns, j)
             self.outer_optimize(j, sample_data)
 
-            v = 0.001
+            v = 1e-3
             for _ in range(self.n_sub_itr):
                 n_sub = 0 # num of subsamples
                 sub_paths_all = []
@@ -192,7 +192,7 @@ class CAPG(object):
 
                 x_paramater = self.flatten_parameters(self.mix_policy.get_param_values())
                 dim_theta = len(x_paramater)
-                u = np.random.rand(dim_theta)
+                u = np.random.randn(dim_theta)
                 y_parameter = self.flatten_parameters(self.mix_policy.get_param_values()) + u * v
                 self.mix_policy.set_param_values(y_parameter, trainable = True)
 
@@ -207,7 +207,10 @@ class CAPG(object):
                 g_y = self.f_mix_grad(sub_observations[0], sub_actions[0], sub_advantages[0])
                 self.mix_policy.set_param_values(x_paramater, trainable=True)
                 g_x = self.f_mix_grad(sub_observations[0], sub_actions[0], sub_advantages[0])
-                p = np.dot(self.flatten_parameters(g_y) - self.flatten_parameters(g_x), d_vector) * u / v
+                p = np.dot(self.flatten_parameters(g_y), d_vector) * u / v
+                print("diff norm:", np.linalg.norm(self.flatten_parameters(g_y)))
+                print("dot norm:", np.dot(self.flatten_parameters(g_y) - self.flatten_parameters(g_x), d_vector))
+                print("u norm:", np.linalg.norm(u))
 
                 #d_vector = -self.policy.get_param_values() + self.backup_policy.get_param_values()
                 '''
@@ -239,7 +242,7 @@ class CAPG(object):
 
                     x_paramater = self.flatten_parameters(self.mix_policy.get_param_values())
                     dim_theta = len(x_paramater)
-                    u = np.random.randn(dim_theta)
+                    u = np.random.rand(dim_theta)
                     y_parameter = self.flatten_parameters(self.mix_policy.get_param_values()) + u * v
                     self.mix_policy.set_param_values(y_parameter, trainable=True)
 
@@ -292,13 +295,15 @@ class CAPG(object):
                 
                 #fst = [x/fst_norm*hv_norm for x in fst]
                 p /= len(sub_paths_all)
+                print(np.linalg.norm(p))
+                print(np.linalg.norm(self.flatten_parameters(self.gradient_backup)))
                 g_d = self.flatten_parameters(self.gradient_backup) + p
                 self.gradient_backup = copy.deepcopy(g_d)
                 avg_returns = np.mean([sum(p["rewards"]) for p in sub_paths_all])
                 self.writer.add_scalar("AverageReturn", avg_returns, j)
                 self.writer.add_scalar("Gradient norm", self.grad_norm(g_d), j)
                 print("timesteps: " + str(j) + " average return: " + str(avg_returns))
-                '''
+
                 if j > 5e5:
                     # check the accuracy of estimator
                     gradient_sample_real = self.sample_paths(100, self.policy)
@@ -326,6 +331,7 @@ class CAPG(object):
 
                     diff = self.grad_norm([g1-g2 for g1,g2 in zip(gradient_real, gradient_1)])
                     diff1 = self.grad_norm([g1-g2 for g1,g2 in zip(gradient_real, gradient_2)])
+                    print(g_d.shape)
                     diff2 = self.grad_norm([g1-g2 for g1,g2 in zip(gradient_real, g_d)])
                     print("diff real with 10:", diff)
                     print("diff real with 1:", diff1)
@@ -334,7 +340,7 @@ class CAPG(object):
                     self.writer.add_scalar("diff_1", diff1, j)
                     self.writer.add_scalar("diff_gd", diff2, j
 )
-                '''
+                print(g_d.shape, np.linalg.norm(g_d))
                 g_d = g_d/np.linalg.norm(g_d)
                 self.backup_policy.set_param_values(self.policy.get_param_values(trainable=True), trainable=True)
                 if self.decay_learning_rate:
@@ -439,19 +445,21 @@ class CAPG(object):
 
         s_g = self.f_train(observations[0], actions[0], advantages[0])
         s_g = [x/num_traj for x in s_g]
-        '''
-        if itr > 5e5:
+
+        if itr > 1e5:
             # check the accuracy of estimator
-            gradient_sample_real = self.sample_paths(100, self.policy)
+            gradient_sample_real = self.sample_paths(10, self.policy)
             gradient_sample_real_observations = np.concatenate([p["observations"] for p in gradient_sample_real])
             gradient_sample_real_actions = np.concatenate([p["actions"] for p in gradient_sample_real])
             gradient_sample_real_advantages = np.concatenate([p["advantages"] for p in gradient_sample_real])
             gradient_real = self.f_train(gradient_sample_real_observations, gradient_sample_real_actions,
                                          gradient_sample_real_advantages)
-            gradient_real = [g / 100 for g in gradient_real]
+            gradient_real = [g / 10 for g in gradient_real]
+            print("real norm:", self.grad_norm(gradient_real))
+            print("s_g norm:", self.grad_norm(s_g))
             diff = self.grad_norm([g1 - g2 for g1, g2 in zip(gradient_real, s_g)])
             print("out diff real with 10:", diff)
-        '''
+
         self.writer.add_scalar("Gradient norm", self.grad_norm(s_g), itr)
         self.writer.add_scalar("Outerloop_gradient_norm", self.grad_norm(s_g), itr)
         self.gradient_backup = copy.deepcopy(s_g)
